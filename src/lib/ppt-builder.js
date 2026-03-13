@@ -151,6 +151,41 @@ function normalizeSlide(slideXml, normalizePositions = false) {
   .replace(/<p:transition\b[^>]*(?:\/>|>[\s\S]*?<\/p:transition>)/g, '');
 }
 
+// Minimal normalization for song slides: only change font sizes and strip transitions.
+// Everything else (positions, colors, typeface, bullets) is left exactly as in the source.
+function normalizeSongSlide(slideXml) {
+  // Copyright detection: lowest non-title shape that has an explicit position.
+  let copyrightShapeId = null;
+  const bodyShapes = [];
+  for (const m of slideXml.matchAll(/<p:sp\b([\s\S]*?)<\/p:sp>/g)) {
+    const s = m[1];
+    if (/<p:ph\s[^>]*type="(title|ctrTitle)"/.test(s)) continue;
+    const id = (s.match(/id="(\d+)"/) || [, ''])[1];
+    const off = s.match(/<a:off x="(\d+)" y="(\d+)"/);
+    const ext = s.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
+    if (id && off && ext) bodyShapes.push({ id, bottom: parseInt(off[2]) + parseInt(ext[2]) });
+  }
+  if (bodyShapes.length >= 2) {
+    bodyShapes.sort((a, b) => b.bottom - a.bottom);
+    copyrightShapeId = bodyShapes[0].id;
+  }
+
+  return slideXml
+    .replace(/<p:sp\b[\s\S]*?<\/p:sp>/g, shape => {
+      const isTitle    = /<p:ph\s[^>]*type="(title|ctrTitle)"/.test(shape);
+      const isSubTitle = /<p:ph\s[^>]*type="subTitle"/.test(shape);
+      const shapeId    = (shape.match(/id="(\d+)"/) || [, ''])[1];
+      const isCopyright = isSubTitle || (copyrightShapeId !== null && shapeId === copyrightShapeId);
+      const targetSz   = isTitle ? NORM_TITLE_SZ : isCopyright ? NORM_COPYRIGHT_SZ : NORM_BODY_SZ;
+      return shape.replace(/(<a:(?:rPr|endParaRPr|defRPr)\b)([^>]*>)/g, (match, tag, rest) => {
+        if (/\bbaseline="-?[1-9]\d*"/.test(rest)) return match; // preserve superscript
+        if (/\bsz="\d+"/.test(rest)) return tag + rest.replace(/\bsz="\d+"/, `sz="${targetSz}"`);
+        return tag + rest.replace(/(\/?>)$/, ` sz="${targetSz}"$1`);
+      });
+    })
+    .replace(/<p:transition\b[^>]*(?:\/>|>[\s\S]*?<\/p:transition>)/g, '');
+}
+
 function xmlEscape(s) {
   return s
     .replace(/&/g, '&amp;')
@@ -158,29 +193,6 @@ function xmlEscape(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
-}
-
-// Scale all shape positions and sizes in a slide XML when source canvas differs
-// from the output canvas. Targets <a:off>, <a:chOff>, <a:ext>, <a:chExt> elements.
-function scaleSlideXml(slideXml, srcDims) {
-  if (!srcDims) return slideXml;
-  const { cx: srcW, cy: srcH } = srcDims;
-  if (srcW === SLIDE_W && srcH === SLIDE_H) return slideXml;
-  const scaleX = SLIDE_W / srcW;
-  const scaleY = SLIDE_H / srcH;
-  return slideXml
-    .replace(/<a:(off|chOff)(\s[^/]*?)\//g, (m, tag, attrs) =>
-      '<a:' + tag + attrs
-        .replace(/\bx="(\d+)"/, (_, v) => `x="${Math.round(parseInt(v) * scaleX)}"`)
-        .replace(/\by="(\d+)"/, (_, v) => `y="${Math.round(parseInt(v) * scaleY)}"`)
-      + '/'
-    )
-    .replace(/<a:(ext|chExt)(\s[^/]*?)\//g, (m, tag, attrs) =>
-      '<a:' + tag + attrs
-        .replace(/\bcx="(\d+)"/, (_, v) => `cx="${Math.round(parseInt(v) * scaleX)}"`)
-        .replace(/\bcy="(\d+)"/, (_, v) => `cy="${Math.round(parseInt(v) * scaleY)}"`)
-      + '/'
-    );
 }
 
 // Build a run (a:r) with given properties
@@ -417,7 +429,7 @@ async function buildPptx(referencePath, slideDescriptors, onProgress = () => {})
   const newPresRels = [];  // relationship XML strings
   const newContentTypes = []; // content type override strings
 
-  function addSlideToOutput(slideXml, relsXml, mediaFiles = {}, normalizePositions = false) {
+  function addSlideToOutput(slideXml, relsXml, mediaFiles = {}, normalizePositions = false, preNormalized = false) {
     const slideNum = nextSlideNum++;
     const rId = `rId${nextRId++}`;
     const slidePath = `ppt/slides/slide${slideNum}.xml`;
@@ -460,7 +472,8 @@ async function buildPptx(referencePath, slideDescriptors, onProgress = () => {})
       }
     );
 
-    outZip.addFile(slidePath, Buffer.from(normalizeSlide(slideXml, normalizePositions), 'utf8'));
+    const finalXml = preNormalized ? slideXml : normalizeSlide(slideXml, normalizePositions);
+    outZip.addFile(slidePath, Buffer.from(finalXml, 'utf8'));
     outZip.addFile(slideRelsPath, Buffer.from(finalRelsXml, 'utf8'));
 
     newSlideRefs.push({ slideNum, rId });
@@ -508,10 +521,9 @@ async function buildPptx(referencePath, slideDescriptors, onProgress = () => {})
       if (desc.pptxPath) {
         try {
           const songExtractor = require('./ppt-extractor');
-          const { slides: songSlides, sourceDimensions } = songExtractor.extractSlides(desc.pptxPath);
+          const { slides: songSlides } = songExtractor.extractSlides(desc.pptxPath);
           for (const s of songSlides) {
-            const scaledXml = scaleSlideXml(s.slideXml, sourceDimensions);
-            addSlideToOutput(scaledXml, s.relsXml, s.mediaFiles, true);
+            addSlideToOutput(normalizeSongSlide(s.slideXml), s.relsXml, s.mediaFiles, false, true);
           }
           return;
         } catch (e) {
