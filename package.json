@@ -1,0 +1,46 @@
+{
+  "name": "dcc-pptgen",
+  "version": "1.0.0",
+  "description": "DCC Bulletin to PowerPoint Generator",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "cli": "node src/cli.js"
+  },
+  "build": {
+    "appId": "com.dcc.pptgen",
+    "productName": "DCC PPT Generator",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "DCC.ico"
+    },
+    "files": [
+      "src/**",
+      "DCC.ico",
+      "node_modules/**"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "ajv": "^8.18.0",
+    "cheerio": "^1.0.0",
+    "electron-store": "^8.2.0",
+    "fuse.js": "^7.0.0",
+    "lucide": "^0.577.0",
+    "mammoth": "^1.8.0",
+    "underscore": "^1.13.6"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

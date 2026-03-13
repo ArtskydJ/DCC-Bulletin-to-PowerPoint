@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCC PPT Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- ── Main View ──────────────────────────────────────────── -->
+  <div id="main-view" class="view active">
+    <div id="drop-zone" tabindex="0">
+      <div class="drop-icon"><i data-lucide="file-text"></i></div>
+      <h2>Drop Bulletin Here</h2>
+      <p>Drop a .docx bulletin file, or click to browse</p>
+    </div>
+    <div id="recommended-section" style="display:none">
+      <h3>Recommended</h3>
+      <ul class="recent-list" id="recommended-list"></ul>
+    </div>
+    <div id="recent-section" style="display:none">
+      <h3>Recent Files</h3>
+      <ul class="recent-list" id="recent-list"></ul>
+    </div>
+    <div class="btn-group" style="margin-top:16px">
+      <button class="btn btn-secondary" id="settings-btn"><i data-lucide="settings"></i> Settings</button>
+    </div>
+  </div>
+
+  <!-- ── Review View ─────────────────────────────────────────── -->
+  <div id="review-view" class="view" style="gap:0">
+    <div style="padding-bottom:16px;flex-shrink:0">
+      <h2 id="review-title">Review Parsed Bulletin</h2>
+      <p class="subtitle" id="review-subtitle">Review and correct items before generating the slideshow.</p>
+    </div>
+    <div class="review-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:130px">Type</th>
+            <th style="width:220px">Title / Content</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody id="review-body"></tbody>
+      </table>
+    </div>
+    <div class="btn-group" style="margin-top:16px;flex-shrink:0">
+      <button class="btn btn-secondary" id="review-cancel-btn"><i data-lucide="house"></i> Home</button>
+      <button class="btn btn-primary" id="review-generate-btn"><i data-lucide="images"></i> Generate Slideshow</button>
+    </div>
+  </div>
+
+  <!-- ── Progress View ───────────────────────────────────────── -->
+  <div id="progress-view" class="view">
+    <div class="progress-box">
+      <div class="progress-spinner"></div>
+      <h2>Generating Slideshow…</h2>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+      </div>
+      <div class="progress-msg" id="progress-msg">Starting…</div>
+    </div>
+  </div>
+
+  <!-- ── Result View ──────────────────────────────────────────── -->
+  <div id="result-view" class="view">
+    <div class="result-box">
+      <div class="icon"><i data-lucide="check"></i></div>
+      <h2>Slideshow Created!</h2>
+      <div class="output-path" id="result-path"></div>
+      <div class="warnings-box" id="warnings-box" style="display:none">
+        <h3>⚠ Warnings</h3>
+        <ul id="warnings-list"></ul>
+      </div>
+      <div class="btn-group" style="justify-content:center">
+        <button class="btn btn-primary" id="result-open-btn"><i data-lucide="images"></i> Open Slideshow</button>
+        <button class="btn btn-secondary" id="result-bulletin-btn"><i data-lucide="file-text"></i> Open Bulletin</button>
+        <button class="btn btn-secondary" id="result-again-btn"><i data-lucide="house"></i> Home</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings View ───────────────────────────────────────── -->
+  <div id="settings-view" class="view">
+    <h2>Settings</h2>
+    <div class="settings-scroll">
+      <div class="settings-section">
+        <h3>Folder Paths</h3>
+        <div class="form-group">
+          <label>Song Library Folder</label>
+          <div class="path-row">
+            <input type="text" id="setting-library" placeholder="e.g. C:\Users\…\Powerpoint Songs">
+            <button class="btn btn-secondary btn-sm" id="browse-library">Browse</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Output Folder (Completed Slides)</label>
+          <div class="path-row">
+            <input type="text" id="setting-output" placeholder="e.g. C:\Users\…\Powerpoint Completed">
+            <button class="btn btn-secondary btn-sm" id="browse-output">Browse</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Bulletin Folder</label>
+          <div class="path-row">
+            <input type="text" id="setting-bulletin" placeholder="e.g. C:\Users\…\WorshipPrograms">
+            <button class="btn btn-secondary btn-sm" id="browse-bulletin">Browse</button>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Title Slide PPTX <span style="color:#888;font-weight:normal">(title slide copied from this file)</span></label>
+          <div class="path-row">
+            <input type="text" id="setting-reference" placeholder="e.g. C:\Users\…\2026-03-08.pptx">
+            <button class="btn btn-secondary btn-sm" id="browse-reference">Browse</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Song Mappings</h3>
+        <p style="color:#888;font-size:13px;margin-bottom:12px">Manual overrides for song file lookups. Title is matched case-insensitively.</p>
+        <div class="mappings-wrap">
+          <table class="mappings-table">
+            <thead>
+              <tr>
+                <th>Song Title</th>
+                <th>File</th>
+                <th style="width:56px"></th>
+              </tr>
+            </thead>
+            <tbody id="mappings-body"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="add-mapping-btn" style="margin-top:8px">+ Add Mapping</button>
+      </div>
+      <!--
+      <div class="settings-section" style="border-bottom:none;margin-bottom:0;padding-bottom:0">
+        <h3>Maintenance</h3>
+        <p style="color:#888;font-size:13px;margin-bottom:12px">Convert all .ppt files in the song library to .pptx format. This happens once per file and prevents delays during slideshow generation.</p>
+        <button class="btn btn-secondary" id="convert-all-btn">Convert All .ppt Files</button>
+      </div>
+      -->
+    </div>
+    <div class="btn-group" style="margin-top:16px;flex-shrink:0">
+      <button class="btn btn-secondary" id="settings-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="settings-save-btn"><i data-lucide="save"></i> Save Settings</button>
+    </div>
+  </div>
+
+<script src="../../node_modules/lucide/dist/umd/lucide.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
