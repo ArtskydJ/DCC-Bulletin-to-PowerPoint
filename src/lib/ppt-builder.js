@@ -341,7 +341,9 @@ function splitReadingLines(lines) {
       flat.push({ role: line.role, text: text.slice(0, cutAt).trimEnd(), runs: null, cont: true });
       text = text.slice(cutAt).trimStart();
     }
-    flat.push({ role: line.role, text, runs: line.runs || null, cont: false });
+    // If the line was split, runs from the original line cover the full original text
+    // (not just this fragment), so we must null them out to avoid content bleed.
+    flat.push({ role: line.role, text, runs: wasSplit ? null : (line.runs || null), cont: false });
   }
 
   // Step 2: Greedily pack lines into slides.
