@@ -337,7 +337,7 @@ function splitReadingLines(lines) {
   for (const line of lines) {
     let text = line.text;
     while (oh(line.role) + text.length > READING_CHAR_LIMIT) {
-      const maxText = READING_CHAR_LIMIT - oh(line.role) - 20; // room for [Continued...]
+      const maxText = READING_CHAR_LIMIT - oh(line.role) - 5; // room for ellipsis
       const cutAt = lastSentenceBoundary(text, maxText);
       flat.push({ role: line.role, text: text.slice(0, cutAt).trimEnd(), runs: null, cont: true });
       text = text.slice(cutAt).trimStart();
@@ -382,7 +382,7 @@ function splitReadingLines(lines) {
       const isCont = needsCont && li === slide.length - 1;
       return {
         role: l.role,
-        text: isCont ? l.text + ' [Continued...]' : l.text,
+        text: isCont ? l.text + '…' : l.text,
         runs: isCont ? null : (l.runs || null), // drop runs when appending [Continued...]
       };
     });
