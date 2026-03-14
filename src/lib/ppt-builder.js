@@ -190,7 +190,7 @@ function normalizeSongSlide(slideXml) {
       }
 
       // Inject rPr into bare <a:r> runs (no existing rPr) — catches theme-colored/unformatted text
-      const injectAttrs   = isCredits ? ' b="0"' : '';
+      const injectAttrs   = isCredits ? ' b="0" i="1"' : '';
       const injectContent = `${NORM_FILL}${isTitle ? NORM_LATIN : ''}`;
       shape = shape.replace(/<a:r>(<a:t>)/g,
         `<a:r><a:rPr lang="en-US" sz="${targetSz}"${injectAttrs} dirty="0">${injectContent}</a:rPr>$1`);
@@ -204,6 +204,8 @@ function normalizeSongSlide(slideXml) {
         if (isCredits) {
           if (/\bb="[^"]*"/.test(r)) r = r.replace(/\bb="[^"]*"/, 'b="0"');
           else r = r.replace(/(\/?>)$/, ` b="0"$1`);
+          if (/\bi="[^"]*"/.test(r)) r = r.replace(/\bi="[^"]*"/, 'i="1"');
+          else r = r.replace(/(\/?>)$/, ` i="1"$1`);
         }
         return tag + r;
       });
