@@ -309,13 +309,11 @@ function makeTitleBody(titleText, sz = NORM_TITLE_SZ) {
   return `<p:txBody><a:bodyPr lIns="48768" tIns="48768" rIns="48768" bIns="48768" anchor="t"/><a:lstStyle/><a:p><a:pPr defTabSz="1169988" eaLnBrk="1"/>${makeRun(titleText, { bold: false, sz })}</a:p></p:txBody>`;
 }
 
-// Split reading lines into slide-sized groups (~600 chars each).
+// Split reading lines into slide-sized groups.
 // Prefers splitting after an All line and before a Leader line.
-// If forced to split mid-section, appends "[Continued...]" to the last line.
-const READING_CHAR_LIMIT = 600;
+// If forced to split mid-section, appends "…" to the last line.
+const READING_CHAR_LIMIT = 450;
 function splitReadingLines(lines) {
-  const oh = role => role.length + 3; // "Role: " overhead per line
-
   // Find the last sentence boundary (./?/;) at or before maxLen that is NOT inside
   // parentheses. Returns the cut position (after the punctuation), or maxLen as fallback.
   function lastSentenceBoundary(text, maxLen) {
@@ -336,9 +334,10 @@ function splitReadingLines(lines) {
   const flat = [];
   for (const line of lines) {
     let text = line.text;
-    while (oh(line.role) + text.length > READING_CHAR_LIMIT) {
-      const maxText = READING_CHAR_LIMIT - oh(line.role) - 5; // room for ellipsis
-      const cutAt = lastSentenceBoundary(text, maxText);
+    let wasSplit = false;
+    while (text.length > READING_CHAR_LIMIT) {
+      wasSplit = true;
+      const cutAt = lastSentenceBoundary(text, READING_CHAR_LIMIT - 1); // room for ellipsis
       flat.push({ role: line.role, text: text.slice(0, cutAt).trimEnd(), runs: null, cont: true });
       text = text.slice(cutAt).trimStart();
     }
@@ -348,10 +347,10 @@ function splitReadingLines(lines) {
   // Step 2: Greedily pack lines into slides.
   const slides = [];
   let cur = [];
-  const curLen = () => cur.reduce((s, l) => s + oh(l.role) + l.text.length, 0);
+  const curLen = () => cur.reduce((s, l) => s + l.text.length, 0);
 
   for (const line of flat) {
-    const addLen = oh(line.role) + line.text.length;
+    const addLen = line.text.length;
     if (cur.length === 0 || curLen() + addLen <= READING_CHAR_LIMIT) {
       cur.push(line);
       continue;
