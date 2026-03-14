@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node src/cli.js \"C:/Users/Joseph/dcc/Bulletins docx/2026-03-08 DCC Bulletin.docx\" \"C:/Users/Joseph/dcc/dcc-pptgen/test-out.pptx\" 2>&1)",
+      "WebFetch(domain:www.electron.build)",
+      "Bash(npm run:*)"
+    ]
+  }
+}
