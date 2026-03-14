@@ -1,33 +1,14 @@
 {
-  "name": "dcc-pptgen",
+  "name": "DCC-PPT-Generator",
   "version": "1.0.0",
   "description": "DCC Bulletin to PowerPoint Generator",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
+    "build:win": "electron-packager . --executable-name=\"DCC PPT Generator\" --platform=win32 --arch=x64 --icon=DCC.ico --out=dist --overwrite --ignore=\"^/dist\"",
+    "zip:win": "pushd dist && powershell Compress-Archive DCC-PPT-Generator-win32-x64 DCC-PPT-Generator-win32-x64.zip -Force && popd",
+    "WINDOWS_NO_LIKEY_GIT_TAR_______zip:win": "tar -acf \"dist/DCC PPT Generator-win32-x64.zip\" \"dist/DCC PPT Generator-win32-x64\"",
     "cli": "node src/cli.js"
-  },
-  "build": {
-    "appId": "com.dcc.pptgen",
-    "productName": "DCC PPT Generator",
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": "nsis",
-      "icon": "DCC.ico"
-    },
-    "files": [
-      "src/**",
-      "DCC.ico",
-      "node_modules/**"
-    ],
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -40,7 +21,7 @@
     "underscore": "^1.13.6"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "@electron/packager": "^19.1.0",
+    "electron": "^33.4.11"
   }
 }

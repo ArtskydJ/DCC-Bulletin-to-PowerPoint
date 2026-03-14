@@ -30,7 +30,7 @@ if (!fs.existsSync(inputDocx)) {
 
 // ── Config / defaults ─────────────────────────────────────────────────────
 // Read electron-store config if it exists, otherwise use defaults
-const configPath = path.join(os.homedir(), 'AppData', 'Roaming', 'dcc-pptgen', 'config.json');
+const configPath = path.join(os.homedir(), 'AppData', 'Roaming', 'DCC-PPT-Generator', 'config.json');
 let config = {};
 if (fs.existsSync(configPath)) {
   try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (e) {}
