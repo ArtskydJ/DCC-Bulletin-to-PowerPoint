@@ -31,7 +31,7 @@ const NORM_BODY_SZ      = 3800; // 38pt — lyric/content text boxes (ph=none)
 const NORM_COPYRIGHT_SZ = 1600; // 16pt — copyright/subtitle placeholder (ph=body)
 
 // Space before a paragraph when the speaker role changes (Leader↔All), in half-points
-const READING_ROLE_GAP = 2000; // 20pt
+const READING_ROLE_GAP = 1600; // 16pt
 
 // Normalized Latin font — replaces any <a:latin> element on every slide
 const NORM_LATIN = '<a:latin typeface="Arial Narrow" panose="020B0606020202030204" pitchFamily="34" charset="0"/>';
@@ -151,10 +151,10 @@ function normalizeSlide(slideXml, normalizePositions = false) {
   .replace(/<p:transition\b[^>]*(?:\/>|>[\s\S]*?<\/p:transition>)/g, '');
 }
 
-// Minimal normalization for song slides: only change font sizes and strip transitions.
-// Everything else (positions, colors, typeface, bullets) is left exactly as in the source.
+// Normalization for song slides: font sizes, white text, title font/position, copyright bullets.
+// Positions and typeface of body shapes are left exactly as in the source.
 function normalizeSongSlide(slideXml) {
-  // Copyright detection: lowest non-title shape that has an explicit position.
+  // Copyright detection: lowest non-title shape with an explicit position.
   let copyrightShapeId = null;
   const bodyShapes = [];
   for (const m of slideXml.matchAll(/<p:sp\b([\s\S]*?)<\/p:sp>/g)) {
@@ -172,16 +172,76 @@ function normalizeSongSlide(slideXml) {
 
   return slideXml
     .replace(/<p:sp\b[\s\S]*?<\/p:sp>/g, shape => {
-      const isTitle    = /<p:ph\s[^>]*type="(title|ctrTitle)"/.test(shape);
-      const isSubTitle = /<p:ph\s[^>]*type="subTitle"/.test(shape);
-      const shapeId    = (shape.match(/id="(\d+)"/) || [, ''])[1];
+      const isTitle     = /<p:ph\s[^>]*type="(title|ctrTitle)"/.test(shape);
+      const isSubTitle  = /<p:ph\s[^>]*type="subTitle"/.test(shape);
+      const shapeId     = (shape.match(/id="(\d+)"/) || [, ''])[1];
       const isCopyright = isSubTitle || (copyrightShapeId !== null && shapeId === copyrightShapeId);
-      const targetSz   = isTitle ? NORM_TITLE_SZ : isCopyright ? NORM_COPYRIGHT_SZ : NORM_BODY_SZ;
-      return shape.replace(/(<a:(?:rPr|endParaRPr|defRPr)\b)([^>]*>)/g, (match, tag, rest) => {
+      const targetSz    = isTitle ? NORM_TITLE_SZ : isCopyright ? NORM_COPYRIGHT_SZ : NORM_BODY_SZ;
+
+      // Pin title y=0 and vertical alignment top — prevents title jumping between source files
+      if (isTitle) {
+        shape = shape.replace(/(<a:off\s+x="[^"]*")\s+y="\d+"/, '$1 y="0"');
+        shape = shape.replace(/<a:bodyPr\b([^>]*?)(\/?)>/g, (_, attrs, slash) => {
+          const a = /\banchor=/.test(attrs)
+            ? attrs.replace(/\banchor="[^"]*"/, 'anchor="t"')
+            : attrs + ' anchor="t"';
+          return `<a:bodyPr${a}${slash}>`;
+        });
+      }
+
+      // Inject rPr into bare <a:r> runs (no existing rPr) — catches theme-colored/unformatted text
+      shape = shape.replace(/<a:r>(<a:t>)/g,
+        `<a:r><a:rPr lang="en-US" sz="${targetSz}" dirty="0">${NORM_FILL}${isTitle ? NORM_LATIN : ''}</a:rPr>$1`);
+
+      // Normalize font size on all run-property opening tags
+      shape = shape.replace(/(<a:(?:rPr|endParaRPr|defRPr)\b)([^>]*>)/g, (match, tag, rest) => {
         if (/\bbaseline="-?[1-9]\d*"/.test(rest)) return match; // preserve superscript
         if (/\bsz="\d+"/.test(rest)) return tag + rest.replace(/\bsz="\d+"/, `sz="${targetSz}"`);
         return tag + rest.replace(/(\/?>)$/, ` sz="${targetSz}"$1`);
       });
+
+      // Replace <a:latin> in title shapes with normalized font
+      if (isTitle) {
+        shape = shape.replace(/<a:latin\b[^/]*\/>/g, NORM_LATIN);
+      }
+
+      // Self-closing <a:rPr/> → open element with white fill (+ font for title)
+      shape = shape.replace(/<(a:(?:rPr|endParaRPr|defRPr))(\b[^>]*)\/>/g,
+        (match, tag, attrs) => `<${tag}${attrs}>${NORM_FILL}${isTitle ? NORM_LATIN : ''}</${tag}>`);
+
+      // Open <a:rPr>...</a:rPr> → inject/replace fill with white (+ font for title)
+      shape = shape.replace(/(<a:(?:rPr|endParaRPr|defRPr)\b[^>]*>)([\s\S]*?)(<\/a:(?:rPr|endParaRPr|defRPr)>)/g,
+        (match, open, content, close) => {
+          let c = content.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/g, NORM_FILL);
+          if (!/<a:solidFill/.test(c)) c = NORM_FILL + c;
+          if (isTitle && !/<a:latin\b/.test(c)) c += NORM_LATIN;
+          return open + c + close;
+        });
+
+      // Remove bullet formatting from copyright shapes
+      if (isCopyright) {
+        shape = shape.replace(/<a:pPr(\b[^>]*)>([\s\S]*?)<\/a:pPr>/g, (_, attrs, inner) => {
+          let s2 = inner
+            .replace(/<a:buNone\/>/g, '')
+            .replace(/<a:buChar\b[^/]*\/>/g, '')
+            .replace(/<a:buFont\b[^/]*\/>/g, '')
+            .replace(/<a:buAutoNum\b[^/]*\/>/g, '')
+            .replace(/<a:buClrTx\/>/g, '')
+            .replace(/<a:buSzTx\/>/g, '')
+            .replace(/<a:buSzPct\b[^/]*\/>/g, '')
+            .replace(/<a:buSzPts\b[^/]*\/>/g, '')
+            .replace(/<a:buClr\b[\s\S]*?<\/a:buClr>/g, '');
+          const spcBef = (s2.match(/<a:spcBef>[\s\S]*?<\/a:spcBef>/) || [''])[0];
+          const spcAft = (s2.match(/<a:spcAft>[\s\S]*?<\/a:spcAft>/) || [''])[0];
+          const rest2  = s2
+            .replace(/<a:spcBef>[\s\S]*?<\/a:spcBef>/, '')
+            .replace(/<a:spcAft>[\s\S]*?<\/a:spcAft>/, '');
+          return `<a:pPr${attrs}>${spcBef}${spcAft}<a:buNone/>${rest2}</a:pPr>`;
+        });
+        shape = shape.replace(/<a:pPr(\b[^>]*)\/>/g, `<a:pPr$1><a:buNone/></a:pPr>`);
+      }
+
+      return shape;
     })
     .replace(/<p:transition\b[^>]*(?:\/>|>[\s\S]*?<\/p:transition>)/g, '');
 }
@@ -196,22 +256,27 @@ function xmlEscape(s) {
 }
 
 // Build a run (a:r) with given properties
-function makeRun(text, { bold = false, sz = NORM_BODY_SZ, schemeColor = true } = {}) {
-  const bAttr = bold ? '1' : '0';
-  const fillXml = schemeColor
-    ? `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>`
-    : `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>`;
-  return `<a:r><a:rPr lang="en-US" sz="${sz}" b="${bAttr}" dirty="0">${fillXml}<a:latin typeface="Arial Narrow" panose="020B0606020202030204" pitchFamily="34" charset="0"/></a:rPr><a:t>${xmlEscape(text)}</a:t></a:r>`;
+function makeRun(text, { bold = false, sz = NORM_BODY_SZ, italic = false } = {}) {
+  const bAttr = bold   ? '1' : '0';
+  const iAttr = italic ? ` i="1"` : '';
+  return `<a:r><a:rPr lang="en-US" sz="${sz}" b="${bAttr}"${iAttr} dirty="0"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:latin typeface="Arial Narrow" panose="020B0606020202030204" pitchFamily="34" charset="0"/></a:rPr><a:t>${xmlEscape(text)}</a:t></a:r>`;
 }
 
-// Build a paragraph for a reading line (Leader: or All:)
-// prevRole: role of the preceding paragraph (null for first)
-function makeReadingParagraph(role, text, prevRole = null) {
-  const bold = role === 'All' ? true : false;
+// Build a paragraph for a reading line (Leader: or All:).
+// lineObj: { role, text, runs } — runs is [{text, italic}] or null.
+// prevRole: role of the preceding paragraph (null for first).
+function makeReadingParagraph(lineObj, prevRole = null) {
+  const role = lineObj.role;
+  const text = lineObj.text;
+  const runs = lineObj.runs; // [{text, italic}] | null
+  const bold = role === 'All';
   const roleChanged = prevRole !== null && prevRole !== role;
   const spaceBefore = roleChanged ? `<a:spcBef><a:spcPts val="${READING_ROLE_GAP}"/></a:spcBef>` : '';
   const label = role + ':\t';
-  return `<a:p><a:pPr marL="${HANGING_MAR}" marR="0" indent="${HANGING_INDENT}">${spaceBefore}<a:spcAft><a:spcPts val="0"/></a:spcAft></a:pPr>${makeRun(label, { bold })}${makeRun(text, { bold })}</a:p>`;
+  const contentRuns = runs
+    ? runs.map(r => makeRun(r.text, { bold, italic: r.italic })).join('')
+    : makeRun(text, { bold });
+  return `<a:p><a:pPr marL="${HANGING_MAR}" marR="0" indent="${HANGING_INDENT}">${spaceBefore}<a:spcAft><a:spcPts val="0"/></a:spcAft></a:pPr>${makeRun(label, { bold })}${contentRuns}</a:p>`;
 }
 
 // Build a plain text paragraph (for scripture lines)
@@ -231,7 +296,7 @@ function makePlainParagraph(text, { sz = NORM_BODY_SZ, bold = false, first = fal
 
 // Build the title text body XML
 function makeTitleBody(titleText, sz = NORM_TITLE_SZ) {
-  return `<p:txBody><a:bodyPr lIns="48768" tIns="48768" rIns="48768" bIns="48768" anchor="b"/><a:lstStyle/><a:p><a:pPr defTabSz="1169988" eaLnBrk="1"/>${makeRun(titleText, { bold: false, sz })}</a:p></p:txBody>`;
+  return `<p:txBody><a:bodyPr lIns="48768" tIns="48768" rIns="48768" bIns="48768" anchor="t"/><a:lstStyle/><a:p><a:pPr defTabSz="1169988" eaLnBrk="1"/>${makeRun(titleText, { bold: false, sz })}</a:p></p:txBody>`;
 }
 
 // Split reading lines into slide-sized groups (~600 chars each).
@@ -311,7 +376,7 @@ function splitReadingLines(lines) {
 
 // Build a reading/catechism/creed slide XML
 function buildReadingSlideXml(title, lines) {
-  const bodyParas = lines.map((l, i) => makeReadingParagraph(l.role, l.text, i === 0 ? null : lines[i - 1].role)).join('');
+  const bodyParas = lines.map((l, i) => makeReadingParagraph(l, i === 0 ? null : lines[i - 1].role)).join('');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld>${SLIDE_BG}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${TITLE_X}" y="${TITLE_Y}"/><a:ext cx="${TITLE_W}" cy="${TITLE_H}"/></a:xfrm></p:spPr>${makeTitleBody(title)}</p:sp><p:sp><p:nvSpPr><p:cNvPr id="3" name="Body"/><p:cNvSpPr txBox="1"><a:spLocks/></p:cNvSpPr><p:nvPr/></p:nvSpPr><p:spPr bwMode="auto"><a:xfrm><a:off x="${BODY_X}" y="${BODY_Y}"/><a:ext cx="${BODY_W}" cy="${BODY_H}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"><a:spAutoFit/></a:bodyPr><a:lstStyle/>${bodyParas}</p:txBody></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
 }
@@ -325,10 +390,10 @@ function buildScriptureSlideXml(title, lines) {
       const [, num, body] = verseMatch;
       const numRun = `<a:r><a:rPr lang="en-US" sz="${NORM_BODY_SZ}" b="0" baseline="15000" dirty="0"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>${NORM_LATIN}</a:rPr><a:t>${xmlEscape(num)}</a:t></a:r>`;
       const space = `<a:r><a:rPr lang="en-US" sz="${NORM_BODY_SZ}" dirty="0"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>${NORM_LATIN}</a:rPr><a:t> </a:t></a:r>`;
-      const textRun = makeRun((i < lines.length - 1 ? body + ' ' : body), { sz: NORM_BODY_SZ });
+      const textRun = makeRun((i < lines.length - 1 ? body + ' ' : body), { sz: NORM_BODY_SZ, bold: true });
       return numRun + space + textRun;
     }
-    return makeRun((i < lines.length - 1 ? line + ' ' : line), { sz: NORM_BODY_SZ });
+    return makeRun((i < lines.length - 1 ? line + ' ' : line), { sz: NORM_BODY_SZ, bold: true });
   }).join('');
   const bodyParas = `<a:p><a:pPr/>${runs}</a:p>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

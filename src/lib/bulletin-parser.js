@@ -34,10 +34,35 @@ function looksLikeSong(line) {
   return SONG_PAGE_RE.test(line);
 }
 
+// Parse <em> italic runs from a HTML segment.
+// Returns [{text, italic}] if any italic content is present, otherwise null.
+function htmlToRuns(segHtml) {
+  if (!segHtml || !/<em\b/.test(segHtml)) return null;
+  const runs = [];
+  let idx = 0;
+  const re = /<em\b[^>]*>([\s\S]*?)<\/em>/gi;
+  let m;
+  while ((m = re.exec(segHtml)) !== null) {
+    if (m.index > idx) {
+      const t = cheerio.load(`<span>${segHtml.slice(idx, m.index)}</span>`)('span').text();
+      if (t) runs.push({ text: t, italic: false });
+    }
+    const t = cheerio.load(`<span>${m[1]}</span>`)('span').text();
+    if (t) runs.push({ text: t, italic: true });
+    idx = m.index + m[0].length;
+  }
+  if (idx < segHtml.length) {
+    const t = cheerio.load(`<span>${segHtml.slice(idx)}</span>`)('span').text();
+    if (t) runs.push({ text: t, italic: false });
+  }
+  return runs.length > 0 ? runs : null;
+}
+
 // Parse Leader/All lines from a block.
-// lines: array of { text: string, bold: boolean } objects (or plain strings for compat)
+// lines: array of { text: string, bold: boolean, html?: string } objects (or plain strings for compat)
 // Role inference: explicit (Leader)/(All) markers take priority;
 // otherwise bold → All, normal → Leader.
+// Returns [{role, text, runs}] where runs is [{text, italic}]|null.
 function parseLeaderAllLines(lines) {
   const result = [];
   let i = 0;
@@ -45,25 +70,41 @@ function parseLeaderAllLines(lines) {
   while (i < lines.length) {
     const item = lines[i];
     const lineText = (typeof item === 'string' ? item : item.text).trim();
-    const isBold = typeof item === 'string' ? undefined : item.bold;
+    const isBold   = typeof item === 'string' ? undefined : item.bold;
+    const itemHtml = typeof item === 'object'  ? item.html  : null;
 
     if (!lineText) { i++; continue; }
 
-    let role;
-    let text;
+    let role, text, runs;
 
     if (/^\(Leader\)/i.test(lineText)) {
       role = 'Leader';
       text = lineText.replace(/^\(Leader\)\s*/i, '').trim();
+      runs = htmlToRuns(itemHtml);
+      if (runs) {
+        // Strip "(Leader)" prefix text from first run
+        if (runs.length > 0 && /^\(Leader\)\s*/i.test(runs[0].text)) {
+          runs[0] = { ...runs[0], text: runs[0].text.replace(/^\(Leader\)\s*/i, '') };
+          if (!runs[0].text.trim()) runs.shift();
+        }
+      }
       i++;
     } else if (/^\(All\)/i.test(lineText)) {
       role = 'All';
       text = lineText.replace(/^\(All\)\s*/i, '').trim();
+      runs = htmlToRuns(itemHtml);
+      if (runs) {
+        if (runs.length > 0 && /^\(All\)\s*/i.test(runs[0].text)) {
+          runs[0] = { ...runs[0], text: runs[0].text.replace(/^\(All\)\s*/i, '') };
+          if (!runs[0].text.trim()) runs.shift();
+        }
+      }
       i++;
     } else {
       // Infer role from bold formatting
       role = isBold ? 'All' : 'Leader';
       text = lineText;
+      runs = htmlToRuns(itemHtml);
       i++;
     }
 
@@ -72,6 +113,7 @@ function parseLeaderAllLines(lines) {
       const nextItem = lines[i];
       const nextText = (typeof nextItem === 'string' ? nextItem : nextItem.text).trim();
       const nextBold = typeof nextItem === 'string' ? undefined : nextItem.bold;
+      const nextHtml = typeof nextItem === 'object'  ? nextItem.html  : null;
 
       if (!nextText) { i++; continue; }
 
@@ -82,10 +124,18 @@ function parseLeaderAllLines(lines) {
       if (nextBold !== undefined && isBold !== undefined && nextBold !== isBold) break;
 
       text += ' ' + nextText;
+      if (runs !== null) {
+        const nextRuns = htmlToRuns(nextHtml);
+        if (nextRuns) {
+          runs = [...runs, { text: ' ', italic: false }, ...nextRuns];
+        } else {
+          runs = [...runs, { text: ' ' + nextText, italic: false }];
+        }
+      }
       i++;
     }
 
-    if (text) result.push({ role, text });
+    if (text) result.push({ role, text, runs: runs || null });
   }
 
   return result;
