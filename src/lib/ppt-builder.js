@@ -191,7 +191,7 @@ function normalizeSongSlide(slideXml) {
 
       // Inject rPr into bare <a:r> runs (no existing rPr) — catches theme-colored/unformatted text
       const injectAttrs   = isCredits ? ' b="0" i="1"' : '';
-      const injectContent = `${NORM_FILL}${isTitle ? NORM_LATIN : ''}`;
+      const injectContent = `${NORM_FILL}${NORM_LATIN}`;
       shape = shape.replace(/<a:r>(<a:t>)/g,
         `<a:r><a:rPr lang="en-US" sz="${targetSz}"${injectAttrs} dirty="0">${injectContent}</a:rPr>$1`);
 
@@ -210,21 +210,19 @@ function normalizeSongSlide(slideXml) {
         return tag + r;
       });
 
-      // Replace <a:latin> in title shapes with normalized font
-      if (isTitle) {
-        shape = shape.replace(/<a:latin\b[^/]*\/>/g, NORM_LATIN);
-      }
+      // Replace <a:latin> in all shapes with normalized font
+      shape = shape.replace(/<a:latin\b[^/]*\/>/g, NORM_LATIN);
 
-      // Self-closing <a:rPr/> → open element with white fill (+ font for title)
+      // Self-closing <a:rPr/> → open element with white fill + font
       shape = shape.replace(/<(a:(?:rPr|endParaRPr|defRPr))(\b[^>]*)\/>/g,
-        (match, tag, attrs) => `<${tag}${attrs}>${NORM_FILL}${isTitle ? NORM_LATIN : ''}</${tag}>`);
+        (match, tag, attrs) => `<${tag}${attrs}>${NORM_FILL}${NORM_LATIN}</${tag}>`);
 
-      // Open <a:rPr>...</a:rPr> → inject/replace fill with white (+ font for title)
+      // Open <a:rPr>...</a:rPr> → inject/replace fill with white + font if missing
       shape = shape.replace(/(<a:(?:rPr|endParaRPr|defRPr)\b[^>]*>)([\s\S]*?)(<\/a:(?:rPr|endParaRPr|defRPr)>)/g,
         (match, open, content, close) => {
           let c = content.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/g, NORM_FILL);
           if (!/<a:solidFill/.test(c)) c = NORM_FILL + c;
-          if (isTitle && !/<a:latin\b/.test(c)) c += NORM_LATIN;
+          if (!/<a:latin\b/.test(c)) c += NORM_LATIN;
           return open + c + close;
         });
 
