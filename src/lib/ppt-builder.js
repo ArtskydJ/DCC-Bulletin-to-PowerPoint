@@ -28,7 +28,7 @@ const HANGING_INDENT = -1781175;
 // Normalized font sizes applied to every slide (half-points: 100 = 1pt)
 const NORM_TITLE_SZ     = 3400; // 34pt — title placeholder (ph=title/ctrTitle)
 const NORM_BODY_SZ      = 3800; // 38pt — lyric/content text boxes (ph=none)
-const NORM_COPYRIGHT_SZ = 1600; // 16pt — copyright/subtitle placeholder (ph=body)
+const NORM_CREDITS_SZ   = 1800; // 18pt — credits/subtitle placeholder (ph=body)
 
 // Space before a paragraph when the speaker role changes (Leader↔All), in half-points
 const READING_ROLE_GAP = 1600; // 16pt
@@ -45,18 +45,18 @@ const XFRM_TITLE = `<a:xfrm><a:off x="${TITLE_X}" y="${TITLE_Y}"/><a:ext cx="${T
 const XFRM_BODY  = `<a:xfrm><a:off x="${BODY_X}" y="${BODY_Y}"/><a:ext cx="${BODY_W}" cy="${BODY_H}"/></a:xfrm>`;
 
 // Normalize font sizes, typeface, colors, and optionally bounding-box positions.
-// Three size tiers: title → NORM_TITLE_SZ, copyright → NORM_COPYRIGHT_SZ,
+// Three size tiers: title → NORM_TITLE_SZ, credits → NORM_CREDITS_SZ,
 // all other shapes (lyric text boxes) → NORM_BODY_SZ.
-// Copyright is the lowest-bottomed non-title, non-placeholder text box on the slide,
-// detected only when there are ≥2 such boxes (i.e. a body box AND a copyright box).
+// Credits shape is the lowest-bottomed non-title, non-placeholder text box on the slide,
+// detected only when there are ≥2 such boxes (i.e. a body box AND a credits box).
 // All <a:latin> replaced with Arial Narrow; all run fills replaced with white.
 // Runs with a non-zero baseline (superscript/subscript) keep their original sz.
 // normalizePositions: only set true for slides we generate (readings/scripture).
 //   Song slides keep their original text-box geometry.
 function normalizeSlide(slideXml, normalizePositions = false) {
-  // Pre-scan: for song slides, find the copyright shape (lowest non-title text box
-  // when ≥2 non-title shapes are present — body + copyright).
-  let copyrightShapeId = null;
+  // Pre-scan: for song slides, find the credits shape (lowest non-title text box
+  // when ≥2 non-title shapes are present — body + credits).
+  let creditsShapeId = null;
   if (!normalizePositions) {
     const bodyShapes = [];
     for (const m of slideXml.matchAll(/<p:sp\b([\s\S]*?)<\/p:sp>/g)) {
@@ -71,7 +71,7 @@ function normalizeSlide(slideXml, normalizePositions = false) {
     }
     if (bodyShapes.length >= 2) {
       bodyShapes.sort((a, b) => b.bottom - a.bottom);
-      copyrightShapeId = bodyShapes[0].id;
+      creditsShapeId = bodyShapes[0].id;
     }
   }
 
@@ -79,11 +79,11 @@ function normalizeSlide(slideXml, normalizePositions = false) {
     const isTitle     = /<p:ph\s[^>]*type="(title|ctrTitle)"/.test(shape);
     const isSubTitle  = /<p:ph\s[^>]*type="subTitle"/.test(shape);
     const shapeId     = (shape.match(/id="(\d+)"/) || [, ''])[1];
-    const isCopyright = isSubTitle || (copyrightShapeId !== null && shapeId === copyrightShapeId);
-    const targetSz    = isTitle ? NORM_TITLE_SZ : isCopyright ? NORM_COPYRIGHT_SZ : NORM_BODY_SZ;
+    const isCredits = isSubTitle || (creditsShapeId !== null && shapeId === creditsShapeId);
+    const targetSz    = isTitle ? NORM_TITLE_SZ : isCredits ? NORM_CREDITS_SZ : NORM_BODY_SZ;
 
     // 0. Normalize bounding-box position
-    if (!isCopyright) {
+    if (!isCredits) {
       if (normalizePositions) {
         // Readings/scripture: snap to exact reference coordinates
         const targetXfrm = isTitle ? XFRM_TITLE : XFRM_BODY;
@@ -151,11 +151,11 @@ function normalizeSlide(slideXml, normalizePositions = false) {
   .replace(/<p:transition\b[^>]*(?:\/>|>[\s\S]*?<\/p:transition>)/g, '');
 }
 
-// Normalization for song slides: font sizes, white text, title font/position, copyright bullets.
+// Normalization for song slides: font sizes, white text, title font/position, credits bullets/bold.
 // Positions and typeface of body shapes are left exactly as in the source.
 function normalizeSongSlide(slideXml) {
-  // Copyright detection: lowest non-title shape with an explicit position.
-  let copyrightShapeId = null;
+  // Credits detection: lowest non-title shape with an explicit position.
+  let creditsShapeId = null;
   const bodyShapes = [];
   for (const m of slideXml.matchAll(/<p:sp\b([\s\S]*?)<\/p:sp>/g)) {
     const s = m[1];
@@ -167,7 +167,7 @@ function normalizeSongSlide(slideXml) {
   }
   if (bodyShapes.length >= 2) {
     bodyShapes.sort((a, b) => b.bottom - a.bottom);
-    copyrightShapeId = bodyShapes[0].id;
+    creditsShapeId = bodyShapes[0].id;
   }
 
   return slideXml
@@ -175,8 +175,8 @@ function normalizeSongSlide(slideXml) {
       const isTitle     = /<p:ph\s[^>]*type="(title|ctrTitle)"/.test(shape);
       const isSubTitle  = /<p:ph\s[^>]*type="subTitle"/.test(shape);
       const shapeId     = (shape.match(/id="(\d+)"/) || [, ''])[1];
-      const isCopyright = isSubTitle || (copyrightShapeId !== null && shapeId === copyrightShapeId);
-      const targetSz    = isTitle ? NORM_TITLE_SZ : isCopyright ? NORM_COPYRIGHT_SZ : NORM_BODY_SZ;
+      const isCredits = isSubTitle || (creditsShapeId !== null && shapeId === creditsShapeId);
+      const targetSz    = isTitle ? NORM_TITLE_SZ : isCredits ? NORM_CREDITS_SZ : NORM_BODY_SZ;
 
       // Pin title y=0 and vertical alignment top — prevents title jumping between source files
       if (isTitle) {
@@ -190,14 +190,22 @@ function normalizeSongSlide(slideXml) {
       }
 
       // Inject rPr into bare <a:r> runs (no existing rPr) — catches theme-colored/unformatted text
+      const injectAttrs   = isCredits ? ' b="0"' : '';
+      const injectContent = `${NORM_FILL}${isTitle ? NORM_LATIN : ''}`;
       shape = shape.replace(/<a:r>(<a:t>)/g,
-        `<a:r><a:rPr lang="en-US" sz="${targetSz}" dirty="0">${NORM_FILL}${isTitle ? NORM_LATIN : ''}</a:rPr>$1`);
+        `<a:r><a:rPr lang="en-US" sz="${targetSz}"${injectAttrs} dirty="0">${injectContent}</a:rPr>$1`);
 
-      // Normalize font size on all run-property opening tags
+      // Normalize font size (and unbold credits) on all run-property opening tags
       shape = shape.replace(/(<a:(?:rPr|endParaRPr|defRPr)\b)([^>]*>)/g, (match, tag, rest) => {
         if (/\bbaseline="-?[1-9]\d*"/.test(rest)) return match; // preserve superscript
-        if (/\bsz="\d+"/.test(rest)) return tag + rest.replace(/\bsz="\d+"/, `sz="${targetSz}"`);
-        return tag + rest.replace(/(\/?>)$/, ` sz="${targetSz}"$1`);
+        let r = rest;
+        if (/\bsz="\d+"/.test(r)) r = r.replace(/\bsz="\d+"/, `sz="${targetSz}"`);
+        else r = r.replace(/(\/?>)$/, ` sz="${targetSz}"$1`);
+        if (isCredits) {
+          if (/\bb="[^"]*"/.test(r)) r = r.replace(/\bb="[^"]*"/, 'b="0"');
+          else r = r.replace(/(\/?>)$/, ` b="0"$1`);
+        }
+        return tag + r;
       });
 
       // Replace <a:latin> in title shapes with normalized font
@@ -218,8 +226,8 @@ function normalizeSongSlide(slideXml) {
           return open + c + close;
         });
 
-      // Remove bullet formatting from copyright shapes
-      if (isCopyright) {
+      // Remove bullet formatting from credits shapes
+      if (isCredits) {
         shape = shape.replace(/<a:pPr(\b[^>]*)>([\s\S]*?)<\/a:pPr>/g, (_, attrs, inner) => {
           let s2 = inner
             .replace(/<a:buNone\/>/g, '')
@@ -322,16 +330,17 @@ function splitReadingLines(lines) {
 
   // Step 1: Expand any individual line whose text alone would overflow the limit,
   // splitting at sentence boundaries (.  ?  ;) and marking the fragment as continued.
+  // runs are only carried on the final (unsplit) fragment; split fragments lose italic info.
   const flat = [];
   for (const line of lines) {
     let text = line.text;
     while (oh(line.role) + text.length > READING_CHAR_LIMIT) {
       const maxText = READING_CHAR_LIMIT - oh(line.role) - 20; // room for [Continued...]
       const cutAt = lastSentenceBoundary(text, maxText);
-      flat.push({ role: line.role, text: text.slice(0, cutAt).trimEnd(), cont: true });
+      flat.push({ role: line.role, text: text.slice(0, cutAt).trimEnd(), runs: null, cont: true });
       text = text.slice(cutAt).trimStart();
     }
-    flat.push({ role: line.role, text, cont: false });
+    flat.push({ role: line.role, text, runs: line.runs || null, cont: false });
   }
 
   // Step 2: Greedily pack lines into slides.
@@ -363,14 +372,18 @@ function splitReadingLines(lines) {
 
   // Step 3: Add [Continued...] where a slide ends mid-section.
   return slides.map((slide, si) => {
-    if (si === slides.length - 1) return slide.map(({ role, text }) => ({ role, text }));
+    if (si === slides.length - 1) return slide.map(({ role, text, runs }) => ({ role, text, runs: runs || null }));
     const last = slide[slide.length - 1];
     const nextFirst = slides[si + 1][0];
     const needsCont = last.cont || last.role === nextFirst.role;
-    return slide.map((l, li) => ({
-      role: l.role,
-      text: needsCont && li === slide.length - 1 ? l.text + ' [Continued...]' : l.text
-    }));
+    return slide.map((l, li) => {
+      const isCont = needsCont && li === slide.length - 1;
+      return {
+        role: l.role,
+        text: isCont ? l.text + ' [Continued...]' : l.text,
+        runs: isCont ? null : (l.runs || null), // drop runs when appending [Continued...]
+      };
+    });
   });
 }
 
